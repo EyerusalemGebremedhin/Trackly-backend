@@ -32,3 +32,13 @@ class GroupRepository:
         if archived is not None:
             query = query.filter(Group.is_archived == archived)
         return query.all()
+
+    def get_by_name_for_user(self, user_id: int, name: str) -> Optional[Group]:
+        from tracker.models.membership import Membership
+        return (
+            self.db.query(Group)
+            .join(Membership, Membership.group_id == Group.id)
+            .filter(Membership.user_id == user_id)
+            .filter(Group.name == name)
+            .first()
+        )

@@ -79,3 +79,10 @@ class UserService:
         if user is None or payload.get("fp") != password_fingerprint(user.hashed_password):
             raise invalid
         self.repo.update(user, {"hashed_password": hash_password(new_password)})
+
+    def get_user(self, user_id: int):
+        user = self.repo.get_by_id(user_id)
+        if not user:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="User not found")
+        return user

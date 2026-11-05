@@ -1,12 +1,15 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 
 from database import get_db
 from dependency import get_current_user
 from tracker.models.user import User
-from tracker.models.membership import MembershipRole
-from tracker.schemas.group import GroupCreate, GroupUpdate, GroupOut, MemberAdd, MembershipOut, TransferLead
+from tracker.models.membership import Membership
+from tracker.models.group_activity import GroupActivity
+from tracker.schemas.group import GroupCreate, GroupUpdate, GroupOut, MemberAdd, MembershipOut, TransferLead, InviteMember, RoleUpdate
+from tracker.schemas.group_activity import LeadershipTransferRequest, CoLeadRequest, GroupActivityOut
 from tracker.services.group_service import GroupService
 from tracker.repositories.user_repository import UserRepository
 
@@ -24,10 +27,11 @@ def _membership_out(membership, db: Session) -> MembershipOut:
         name=u.name if u else "Unknown",
         email=u.email if u else "unknown@example.com",
         skills=u.skills if u else None,
+        added_reason=getattr(membership, 'added_reason', None),
     )
 
 
-def _group_out(group, role: MembershipRole) -> GroupOut:
+def _group_out(group, role) -> GroupOut:
     return GroupOut(
         id=group.id,
         name=group.name,
@@ -43,7 +47,7 @@ def _group_out(group, role: MembershipRole) -> GroupOut:
 @router.post("", response_model=GroupOut)
 def create_group(data: GroupCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     group = GroupService(db).create(data, current_user)
-    return _group_out(group, MembershipRole.lead)
+    return _group_out(group, "lead")
 
 
 @router.get("", response_model=List[GroupOut])
@@ -103,11 +107,47 @@ def add_member(group_id: int, data: MemberAdd, db: Session = Depends(get_db), cu
 
 
 @router.delete("/{group_id}/members/{member_user_id}", status_code=204)
-def remove_member(group_id: int, member_user_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    GroupService(db).remove_member(group_id, member_user_id, current_user)
+def remove_member(group_id: int, member_user_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user), reason: str = None):
+    GroupService(db).remove_member(group_id, member_user_id, current_user, reason)
+    return None
 
 
-@router.post("/{group_id}/transfer-lead", response_model=MembershipOut)
-def transfer_lead(group_id: int, data: TransferLead, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    membership = GroupService(db).transfer_lead(group_id, data.new_lead_user_id, current_user)
+@router.post("/{group_id}/transfer-leadership", response_model=MembershipOut)
+def transfer_leadership(group_id: int, data: LeadershipTransferRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    membership = GroupService(db).transfer_lead(group_id, data.new_lead_id, current_user, data.reason)
     return _membership_out(membership, db)
+
+
+@router.post("/{group_id}/co-leads", response_model=MembershipOut)
+def add_co_lead(group_id: int, data: CoLeadRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    membership = GroupService(db).add_co_lead(group_id, data.user_id, current_user, data.reason)
+    return _membership_out(membership, db)
+
+
+@router.patch("/{group_id}/members/{member_user_id}/role", response_model=MembershipOut)
+def update_member_role(group_id: int, member_user_id: int, data: RoleUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    membership = GroupService(db).update_member_role(group_id, member_user_id, data.role, current_user, data.reason)
+    return _membership_out(membership, db)
+
+
+@router.get("/{group_id}/activity", response_model=List[GroupActivityOut])
+def get_group_activity(group_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    service = GroupService(db)
+    if not service.memberships.get(current_user.id, group_id):
+        raise HTTPException(status_code=403, detail="Not a member of this group")
+    logs = db.query(GroupActivity).filter(GroupActivity.group_id == group_id).order_by(GroupActivity.created_at.desc()).all()
+    return logs
+
+
+@router.delete("/{group_id}", status_code=204)
+def delete_group(group_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user), reason: str = None):
+    from tracker.services.group_service import GroupService
+    service = GroupService(db)
+    service.delete(group_id, current_user, reason)
+    return None
+
+
+@router.post("/{group_id}/invite")
+def invite_member(group_id: int, data: InviteMember, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from tracker.services.group_service import GroupService
+    return GroupService(db).invite_member(group_id, data.email, current_user, data.first_name, data.last_name, getattr(data,'role',None) or 'member', getattr(data,'reason',None))

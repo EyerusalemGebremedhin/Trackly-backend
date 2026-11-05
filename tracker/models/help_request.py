@@ -28,3 +28,6 @@ class HelpRequest(Base):
     resolved_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     resolved_at = Column(DateTime, nullable=True)
+
+    reason = Column(Text, nullable=True)
+    task_type = Column(String, nullable=True)  # e.g., backend, api, frontend, bug, other

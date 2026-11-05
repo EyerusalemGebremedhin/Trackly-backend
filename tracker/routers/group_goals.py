@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
@@ -18,7 +18,7 @@ def set_goal(
     return GroupGoalService(db).create(group_id, data, current_user)
 
 
-@router.get("/latest", response_model=GroupGoalOut)
+@router.get("/latest", response_model=Optional[GroupGoalOut])
 def latest_goal(group_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     return GroupGoalService(db).latest(group_id)
 

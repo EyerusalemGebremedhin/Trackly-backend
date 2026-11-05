@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 import hashlib
 import bcrypt
+import secrets
 from jose import JWTError, jwt
 
 from tracker.core.config import settings
@@ -29,6 +30,8 @@ def decode_access_token(token: str) -> Optional[dict]:
         return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
     except JWTError:
         return None
+
+
 def password_fingerprint(hashed_password: str) -> str:
     return hashlib.sha256(hashed_password.encode("utf-8")).hexdigest()[:16]
 
@@ -51,4 +54,44 @@ def decode_password_reset_token(token: str) -> Optional[dict]:
         return None
     if payload.get("purpose") != "password_reset" or payload.get("uid") is None:
         return None
-    return payload    
+    return payload
+
+
+def generate_verification_code() -> str:
+    return f"{secrets.randbelow(1000000):06d}"
+
+
+def create_verification_token(user_id: int) -> str:
+    expire = datetime.utcnow() + timedelta(minutes=30)
+    payload = {"uid": str(user_id), "purpose": "email_verification", "exp": expire}
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
+def decode_verification_token(token: str) -> Optional[dict]:
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+    except JWTError:
+        return None
+    if payload.get("purpose") != "email_verification" or payload.get("uid") is None:
+        return None
+    return payload
+
+
+def create_activation_token(user_id: int) -> str:
+    expire = datetime.utcnow() + timedelta(hours=72)
+    payload = {"uid": str(user_id), "purpose": "account_activation", "exp": expire}
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
+def decode_activation_token(token: str) -> Optional[dict]:
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+    except JWTError:
+        return None
+    if payload.get("purpose") != "account_activation" or payload.get("uid") is None:
+        return None
+    return payload
+
+
+def generate_secure_token() -> str:
+    return secrets.token_urlsafe(48)

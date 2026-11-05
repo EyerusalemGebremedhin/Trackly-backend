@@ -4,7 +4,6 @@ from sqlalchemy.orm import Session
 
 from tracker.models.user import User
 from tracker.models.group_goal import GroupGoal
-from tracker.models.membership import MembershipRole
 from tracker.repositories.group_goal_repository import GroupGoalRepository
 from tracker.repositories.membership_repository import MembershipRepository
 from tracker.schemas.group_goal import GroupGoalCreate
@@ -18,7 +17,7 @@ class GroupGoalService:
 
     def create(self, group_id: int, data: GroupGoalCreate, current_user: User) -> GroupGoal:
         membership = self.memberships.get(current_user.id, group_id)
-        if not membership or membership.role != MembershipRole.lead:
+        if not membership or membership.role != 'lead':
             raise HTTPException(status_code=403, detail="Only a lead can set the group's goal")
 
         goal = GroupGoal(

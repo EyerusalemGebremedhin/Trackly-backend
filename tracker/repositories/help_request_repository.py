@@ -31,3 +31,16 @@ class HelpRequestRepository:
         self.db.commit()
         self.db.refresh(request)
         return request
+
+    def list(self, group_id: int, open_only: bool = True):
+        query = self.db.query(HelpRequest).filter(HelpRequest.group_id == group_id)
+        if open_only:
+            query = query.filter(HelpRequest.status == HelpRequestStatus.open)
+        return query.order_by(HelpRequest.created_at.desc()).all()
+
+    def update(self, request: HelpRequest, data: dict):
+        for k, v in data.items():
+            setattr(request, k, v)
+        self.db.commit()
+        self.db.refresh(request)
+        return request

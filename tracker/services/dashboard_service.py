@@ -5,7 +5,6 @@ from sqlalchemy.orm import Session
 
 from tracker.models.user import User
 from tracker.models.task import Task, TaskStatus
-from tracker.models.membership import MembershipRole
 from tracker.repositories.task_repository import TaskRepository
 from tracker.repositories.membership_repository import MembershipRepository
 from tracker.repositories.checkin_repository import CheckinRepository
@@ -70,7 +69,7 @@ class DashboardService:
         membership = self.memberships.get(current_user.id, group_id)
         if not membership:
             raise HTTPException(status_code=403, detail="You are not a member of this group")
-        if lead_only and membership.role != MembershipRole.lead:
+        if lead_only and membership.role != 'lead':
             raise HTTPException(status_code=403, detail="Only a lead can view the group dashboard")
 
         group.my_role = membership.role
@@ -92,6 +91,16 @@ class DashboardService:
             completed_with_deadline = [t for t in tasks if t.status == TaskStatus.done and t.deadline]
             on_time = sum(1 for t in completed_with_deadline if t.completed_at and t.completed_at.date() <= t.deadline)
             on_time_rate = round((on_time / len(completed_with_deadline)) * 100, 1) if completed_with_deadline else 100.0
+
+            completed = [t for t in tasks if t.status == TaskStatus.done]
+            completion_times = []
+            for t in completed:
+                if t.completed_at and t.created_at:
+                    diff = (t.completed_at - t.created_at).total_seconds() / 3600.0
+                    if diff >= 0:
+                        completion_times.append(diff)
+            completion_time_avg_hours = round(sum(completion_times) / len(completion_times), 2) if completion_times else 0.0
+            fastest_finish_score = round((1.0 / (completion_time_avg_hours + 0.1)) * 100, 1) if completion_time_avg_hours >= 0 else 0.0
 
             open_tasks = [t for t in tasks if t.status != TaskStatus.done]
             workload_score = round(sum(t.estimated_hours or 0 for t in open_tasks), 1)
@@ -121,6 +130,8 @@ class DashboardService:
                 on_time_rate=on_time_rate, total_estimated_hours=est_hours,
                 total_actual_hours=act_hours, workload_score=workload_score,
                 has_checked_in=has_checked_in,
+                completion_time_avg_hours=completion_time_avg_hours,
+                fastest_finish_score=fastest_finish_score,
             ))
 
         return GroupDashboard(

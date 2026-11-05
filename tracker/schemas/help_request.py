@@ -2,27 +2,27 @@ from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel
 
-from tracker.models.help_request import HelpRequestStatus
-
 
 class HelpRequestCreate(BaseModel):
-    skill_needed: str
     task_id: Optional[int] = None
+    skill_needed: str
     note: Optional[str] = None
+    reason: Optional[str] = None
+    task_type: Optional[str] = None
 
 
 class HelpRequestOut(BaseModel):
     id: int
     group_id: int
-    task_id: Optional[int]
+    task_id: Optional[int] = None
     requested_by: int
     requested_by_name: str
     skill_needed: str
-    note: Optional[str]
-    status: HelpRequestStatus
-    resolved_by: Optional[int]
+    note: Optional[str] = None
+    reason: Optional[str] = None
+    task_type: Optional[str] = None
+    status: str
     created_at: datetime
-    resolved_at: Optional[datetime]
 
     class Config:
         from_attributes = True

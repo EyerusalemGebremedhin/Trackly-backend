@@ -4,7 +4,6 @@ from sqlalchemy.orm import Session
 
 from tracker.models.user import User
 from tracker.models.checkin import Checkin, PeriodType
-from tracker.models.membership import MembershipRole
 from tracker.repositories.checkin_repository import CheckinRepository
 from tracker.repositories.membership_repository import MembershipRepository
 from tracker.schemas.checkin import CheckinCreate
@@ -56,6 +55,6 @@ class CheckinService:
 
     def history_for_group(self, group_id: int, current_user: User):
         membership = self.memberships.get(current_user.id, group_id)
-        if not membership or membership.role != MembershipRole.lead:
-            raise HTTPException(status_code=403, detail="Only a lead can view the group's check-in history")
+        if not membership:
+            raise HTTPException(status_code=403, detail="You're not a member of that group")
         return self.repo.get_by_group(group_id)

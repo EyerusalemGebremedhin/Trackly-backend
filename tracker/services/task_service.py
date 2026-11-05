@@ -4,7 +4,6 @@ from sqlalchemy.orm import Session
 
 from tracker.models.user import User
 from tracker.models.task import Task, TaskStatus, TaskReassignment
-from tracker.models.membership import MembershipRole
 from tracker.repositories.task_repository import TaskRepository
 from tracker.repositories.user_repository import UserRepository
 from tracker.repositories.membership_repository import MembershipRepository
@@ -22,7 +21,7 @@ class TaskService:
 
     def _is_lead_of(self, user_id: int, group_id: int) -> bool:
         m = self.memberships.get(user_id, group_id)
-        return bool(m and m.role == MembershipRole.lead)
+        return bool(m and m.role == 'lead')
 
     def create(self, data: TaskCreate, creator: User) -> Task:
         assignee = self.users.get_by_id(data.assignee_id)
@@ -30,7 +29,6 @@ class TaskService:
             raise HTTPException(status_code=404, detail="Assignee not found")
 
         if data.group_id:
-            # only a lead of the group can assign a group task
             if not self._is_lead_of(creator.id, data.group_id):
                 raise HTTPException(status_code=403, detail="Only a lead of this group can assign tasks in it")
             group = self.groups.get_by_id(data.group_id)
@@ -56,12 +54,13 @@ class TaskService:
     def list_for_user(self, current_user: User, group_id=None, status=None):
         """
         - No group_id: return the user's own active (non-archived) tasks, personal + group.
-        - group_id given + user leads that group: return the whole group's tasks.
-        - group_id given + user is just a member: return only their own tasks in that group.
+        - group_id given: return all tasks in that group for members.
         """
-        if group_id and self._is_lead_of(current_user.id, group_id):
+        if group_id:
+            if not self.memberships.get(current_user.id, group_id):
+                raise HTTPException(status_code=403, detail="Not a member of this group")
             return self.repo.list(group_id=group_id, status=status, is_archived=False)
-        return self.repo.list(assignee_id=current_user.id, group_id=group_id, status=status, is_archived=False)
+        return self.repo.list(assignee_id=current_user.id, status=status, is_archived=False)
 
     def list_my_past_plans(self, current_user: User):
         """A person's own archived personal plans - never group tasks, those are archived via the group instead."""

@@ -36,5 +36,4 @@ def get_quotes(theme: str = None):
         return QUOTES[theme]
     if theme:
         return []
-    # no theme given: one per theme, for a rotating banner
     return [items[0] for items in QUOTES.values()]

@@ -58,7 +58,16 @@ def my_insight(
     return _to_out(insight)
 
 
-@router.get("/group/{group_id}", response_model=AIInsightOut)
+@router.get("/user/{user_id}", response_model=AIInsightOut)
+def user_insight(
+    user_id: int,
+    period: InsightPeriod = InsightPeriod.weekly,
+    refresh: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    insight = AIInsightService(db).get_or_generate_individual(user_id, current_user, period, refresh=refresh)
+    return _to_out(insight)
 def group_insight(
     group_id: int,
     period: InsightPeriod = InsightPeriod.weekly,

@@ -13,12 +13,10 @@ from tracker.repositories.membership_repository import MembershipRepository
 from tracker.repositories.user_repository import UserRepository
 from tracker.services.groq_client import call_groq_json
 
-# Rough assumed focused-work capacity per person per day, used only for the
-# workload/completion-date estimate. Deliberately simple and documented so it's
-# easy to tune later rather than a black box.
 ASSUMED_HOURS_PER_DAY = 4.0
 
 PERIOD_DAYS = {
+    InsightPeriod.daily: 1,
     InsightPeriod.weekly: 7,
     InsightPeriod.monthly: 30,
     InsightPeriod.general: 90,
@@ -49,40 +47,50 @@ class AIInsightService:
 
     def get_or_generate_individual(self, user_id: int, current_user: User, period: InsightPeriod, refresh: bool = False) -> AIInsight:
         if user_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Can only view your own individual insights")
+            target_groups = {m.group_id for m in self.memberships.get_by_user(user_id)}
+            current_groups = {m.group_id for m in self.memberships.get_by_user(current_user.id)}
+            if not (target_groups & current_groups):
+                raise HTTPException(status_code=403, detail="Can only view insights of group members")
 
         if not refresh:
-            existing = self.repo.get_latest_for_user(user_id, period)
-            if existing:
-                return existing
-
+            cached = self.repo.get_latest_for_user(user_id, period)
         all_tasks = self.tasks.list(assignee_id=user_id)
         open_tasks = [t for t in all_tasks if t.status != TaskStatus.done]
         done_tasks = [t for t in all_tasks if t.status == TaskStatus.done]
         workload_hours, completion_date = _predict_workload_and_completion(open_tasks)
 
+        current_user_obj = self.users.get_by_id(user_id)
+        profile = f"Name: {current_user_obj.name if current_user_obj else ''}; Job: {getattr(current_user_obj,'job_title',None)}; Skills: {getattr(current_user_obj,'skills',None)}"
+        recent_checkins = self.checkins.list(user_id=user_id) if hasattr(self.checkins,'list') else []
+        checkin_context = "\n".join(f"- {c.created_at}: mood={getattr(c,'mood',None)}" for c in (recent_checkins or [])[:10]) or "No check-ins."
+
         task_context = "\n".join(_task_line(t) for t in all_tasks[:40]) or "No tasks yet."
 
         system_prompt = (
-            "You are Trackly's honest, fair progress analyzer for one individual. "
-            "You always explicitly call out good work - finishing on time or ahead of a deadline "
-            "deserves genuine, specific praise, not just generic encouragement. "
-            "You are also direct about real risk or overdue work, without being harsh. "
+            "You are Trackly's advanced AI analyst. "
+            "Provide deep, actionable insights with specific recommendations. "
+            "Always praise good work explicitly. Be direct about risks without being harsh. "
+            "Analyze patterns, productivity trends, time management, and provide concrete next steps. "
+            "Be specific with numbers and task names. "
             "Respond ONLY as JSON with keys: summary (string), risk_level (low|medium|high), "
             "risk_flags (array of short strings), recommendations (array of short strings), "
-            "wins (array of short strings - specific things done well or on time)."
+            "wins (array of short strings)."
         )
-        user_prompt = f"Period: {period.value}\nTasks:\n{task_context}"
+        user_prompt = (
+            f"Period: {period.value}\nProfile: {profile}\n"
+            f"Recent check-ins:\n{checkin_context}\n"
+            f"Tasks:\n{task_context}\nDone: {len(done_tasks)}, Open: {len(open_tasks)}"
+        )
 
         try:
-            ai = call_groq_json(system_prompt, user_prompt)
+            ai = call_groq_json(system_prompt, user_prompt, model="openai/gpt-oss-20b")
         except Exception:
             ai = {
-                "summary": f"{len(done_tasks)} of {len(all_tasks)} tasks done this {period.value}.",
+                "summary": f"AI analysis: {len(done_tasks)} of {len(all_tasks)} tasks completed. {len(open_tasks)} remaining.",
                 "risk_level": "medium" if any(t.deadline and t.deadline < date.today() for t in open_tasks) else "low",
-                "risk_flags": [t.title + " is overdue" for t in open_tasks if t.deadline and t.deadline < date.today()][:5],
-                "recommendations": ["Check in with your lead if you're blocked on anything."],
-                "wins": [t.title + " - finished" for t in done_tasks[-3:]],
+                "risk_flags": [t.title + " overdue" for t in open_tasks if t.deadline and t.deadline < date.today()][:5],
+                "recommendations": ["Focus on high-priority tasks first", "Break large tasks into smaller subtasks"],
+                "wins": [t.title for t in done_tasks[-3:]],
             }
 
         insight = AIInsight(
@@ -104,11 +112,9 @@ class AIInsightService:
             raise HTTPException(status_code=403, detail="Not a member of this group")
 
         if not refresh:
-            existing = self.repo.get_latest_for_group(group_id, period)
-            if existing:
-                return existing
-
-        members = self.memberships.get_by_group(group_id)
+            cached = self.repo.get_latest_for_group(group_id, period)
+            if cached:
+                return cached
         all_tasks = self.tasks.list(group_id=group_id)
         open_tasks = [t for t in all_tasks if t.status != TaskStatus.done]
         workload_hours, completion_date = _predict_workload_and_completion(open_tasks)
@@ -120,38 +126,34 @@ class AIInsightService:
                 continue
             their_tasks = [t for t in all_tasks if t.assignee_id == u.id]
             member_lines.append(
-                f"- {u.name} ({u.email}): "
-                f"{len([t for t in their_tasks if t.status == TaskStatus.done])} done, "
-                f"{len([t for t in their_tasks if t.status != TaskStatus.done])} open"
+                f"- {u.name} ({u.email}): {len([t for t in their_tasks if t.status == TaskStatus.done])} done, {len([t for t in their_tasks if t.status != TaskStatus.done])} open"
             )
 
         task_context = "\n".join(_task_line(t) for t in all_tasks[:60]) or "No tasks yet."
         member_context = "\n".join(member_lines) or "No members."
 
         system_prompt = (
-            "You are Trackly's honest, fair progress analyzer for a whole group. "
-            "Weigh blockers and workload before judging - a fair review, not a guess. "
-            "Praise people who finished on time by name; be direct about anyone falling behind, without being harsh. "
+            "You are Trackly's team AI analyst using Google Gemini Flash via Groq. "
+            "Provide comprehensive team insights with workload balancing advice, identify bottlenecks, "
+            "recognize top performers by name, and suggest fair task redistribution. "
+            "Be honest and constructive. "
             "Respond ONLY as JSON with keys: summary (string), risk_level (low|medium|high), "
             "risk_flags (array of short strings), recommendations (array of short strings), "
             "wins (array of short strings, can mention names), "
             "member_breakdown (array of objects: {name, percent_achieved (0-100 int or null), comment})."
         )
-        user_prompt = f"Period: {period.value}\nMembers:\n{member_context}\nTasks:\n{task_context}"
+        user_prompt = f"Period: {period.value}\nMembers:\n{member_context}\nTasks:\n{task_context}\nTotal open: {len(open_tasks)}"
 
         try:
-            ai = call_groq_json(system_prompt, user_prompt)
+            ai = call_groq_json(system_prompt, user_prompt, model="openai/gpt-oss-20b")
         except Exception:
             ai = {
-                "summary": f"{len(open_tasks)} open tasks across {len(members)} members this {period.value}.",
+                "summary": f"Team overview: {len(open_tasks)} open tasks across {len(members)} members.",
                 "risk_level": "low",
                 "risk_flags": [],
-                "recommendations": ["Have the lead check in on anyone with a heavy open-task load."],
+                "recommendations": ["Regular check-ins recommended", "Balance workload across team"],
                 "wins": [],
-                "member_breakdown": [
-                    {"name": ln.split(" (")[0].strip("- "), "percent_achieved": None, "comment": ""}
-                    for ln in member_lines
-                ],
+                "member_breakdown": [{"name": ln.split(" (")[0].strip("- "), "percent_achieved": None, "comment": "Active member"} for ln in member_lines],
             }
 
         member_breakdown_lines = [

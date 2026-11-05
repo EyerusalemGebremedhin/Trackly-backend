@@ -18,6 +18,7 @@ class RiskLevel(str, enum.Enum):
 
 
 class InsightPeriod(str, enum.Enum):
+    daily = "daily"
     weekly = "weekly"
     monthly = "monthly"
     general = "general"  # all-time / overall picture

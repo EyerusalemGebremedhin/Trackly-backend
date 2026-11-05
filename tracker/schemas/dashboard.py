@@ -34,6 +34,8 @@ class MemberSummary(BaseModel):
     total_actual_hours: float
     workload_score: float  # sum of estimated hours across open tasks
     has_checked_in: bool   # for current period, per group cadence
+    completion_time_avg_hours: float = 0.0
+    fastest_finish_score: float = 0.0
 
 
 class GroupDashboard(BaseModel):
