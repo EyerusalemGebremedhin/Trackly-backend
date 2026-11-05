@@ -7,7 +7,7 @@ python-multipart
 pydantic[email]
 python-dotenv
 httpx
-psycopg2-binaryagent-detector==2.0.0
+psycopg2-binary==2.9.13
 annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.15.1
@@ -39,7 +39,6 @@ markupsafe==3.0.3
 mdurl==0.1.2
 numpy==2.2.6
 passlib==1.7.4
-psycopg2-binary==2.9.13
 pyasn1==0.6.4
 pycparser==3.0
 pydantic==2.13.5
