@@ -35,7 +35,8 @@ class Settings:
     SMTP_PORT: int = int(os.environ.get("SMTP_PORT", 587))
     SMTP_USER: str = os.environ.get("SMTP_USER") or ""
     SMTP_PASSWORD: str = os.environ.get("SMTP_PASSWORD") or ""
-    SMTP_FROM: str = os.environ.get("SMTP_FROM") or os.environ.get("MAIL_FROM") or os.environ.get("RESEND_FROM") or "onboarding@resend.dev"
+    EMAIL_SCRIPT_URL: str = os.environ.get("EMAIL_SCRIPT_URL", "")
+    EMAIL_SCRIPT_SECRET: str = os.environ.get("EMAIL_SCRIPT_SECRET", "")
     RESEND_API_KEY: str = os.environ.get("RESEND_API_KEY", "")
 
 
