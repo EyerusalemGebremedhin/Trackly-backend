@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
@@ -11,7 +11,7 @@ from tracker.schemas.user import (
 )
 from tracker.services.user_service import UserService
 from tracker.services.auth_service import AuthService
-from tracker.services.security import create_access_token
+from tracker.services.security import create_access_token, create_refresh_token, decode_refresh_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -24,16 +24,28 @@ def register(data: UserCreate, db: Session = Depends(get_db)):
 @router.post("/login", response_model=Token)
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = AuthService(db).authenticate(form_data.username, form_data.password)
-    token = create_access_token({"sub": str(user.id)})
-    return {"access_token": token, "token_type": "bearer"}
+    access = create_access_token({"sub": str(user.id)})
+    refresh = create_refresh_token({"sub": str(user.id)})
+    return {"access_token": access, "refresh_token": refresh, "token_type": "bearer"}
 
 
 @router.post("/verify-email")
 def verify_email(data: VerifyEmail, db: Session = Depends(get_db)):
     AuthService(db).verify_email(data.email, data.code)
     user = AuthService(db).repo.get_by_email(data.email)
-    token = create_access_token({"sub": str(user.id)})
-    return {"message": "MFA verification successful", "verified": True, "access_token": token, "token_type": "bearer"}
+    access = create_access_token({"sub": str(user.id)})
+    refresh = create_refresh_token({"sub": str(user.id)})
+    return {"message": "MFA verification successful", "verified": True, "access_token": access, "refresh_token": refresh, "token_type": "bearer"}
+
+
+@router.post("/refresh", response_model=Token)
+def refresh_token(refresh_token: str, db: Session = Depends(get_db)):
+    payload = decode_refresh_token(refresh_token)
+    if not payload or not payload.get("sub"):
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+    access = create_access_token({"sub": payload["sub"]})
+    new_refresh = create_refresh_token({"sub": payload["sub"]})
+    return {"access_token": access, "refresh_token": new_refresh, "token_type": "bearer"}
 
 
 @router.post("/resend-verification")
