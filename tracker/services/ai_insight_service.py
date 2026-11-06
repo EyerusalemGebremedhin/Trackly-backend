@@ -119,8 +119,8 @@ class AIInsightService:
         open_tasks = [t for t in all_tasks if t.status != TaskStatus.done]
         workload_hours, completion_date = _predict_workload_and_completion(open_tasks)
 
+        members = self.memberships.get_by_group(group_id)
         member_lines = []
-        for m in members:
             u = self.users.get_by_id(m.user_id)
             if not u:
                 continue
