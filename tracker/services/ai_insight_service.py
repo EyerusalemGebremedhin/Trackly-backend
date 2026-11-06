@@ -121,6 +121,7 @@ class AIInsightService:
 
         members = self.memberships.get_by_group(group_id)
         member_lines = []
+        for m in members:
             u = self.users.get_by_id(m.user_id)
             if not u:
                 continue
