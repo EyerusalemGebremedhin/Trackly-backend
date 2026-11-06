@@ -91,7 +91,7 @@ class AuthService:
                     </tr>
                     <tr>
                       <td style="background-color: #ffffff; padding: 24px 40px; text-align: center; border-top: 1px solid #f3f4f6;">
-                        <p style="color: #9ca3af; margin: 0; font-size: 12px;">© 2025 Trackly</p>
+                        <p style="color: #9ca3af; margin: 0; font-size: 12px;">© 2026 Trackly</p>
                       </td>
                     </tr>
                   </table>
@@ -196,7 +196,7 @@ class AuthService:
                     </tr>
                     <tr>
                       <td style="background-color: #ffffff; padding: 24px 40px; text-align: center; border-top: 1px solid #f3f4f6;">
-                        <p style="color: #9ca3af; margin: 0; font-size: 12px;">© 2025 Trackly</p>
+                        <p style="color: #9ca3af; margin: 0; font-size: 12px;">© 2026 Trackly</p>
                       </td>
                     </tr>
                   </table>
@@ -276,7 +276,7 @@ class AuthService:
                     </tr>
                     <tr>
                       <td style="background-color: #ffffff; padding: 24px 40px; text-align: center; border-top: 1px solid #f3f4f6;">
-                        <p style="color: #9ca3af; margin: 0; font-size: 12px;">© 2025 Trackly</p>
+                        <p style="color: #9ca3af; margin: 0; font-size: 12px;">© 2026 Trackly</p>
                       </td>
                     </tr>
                   </table>
