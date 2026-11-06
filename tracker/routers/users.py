@@ -17,7 +17,12 @@ from tracker.services.user_service import UserService
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-@router.get("/me", response_model=UserOut)
+@router.delete("/me/avatar")
+def remove_avatar(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    current_user.avatar_url = None
+    db.commit()
+    db.refresh(current_user)
+    return {"avatar_url": None}
 def get_me(current_user: User = Depends(get_current_user)):
     return current_user
 
