@@ -142,17 +142,26 @@ class DashboardService:
 
     def group_metrics(self, group_id: int, current_user: User) -> dict:
         dash = self.group_dashboard(group_id, current_user, lead_only=False)
-        return {
-            "members": [
-                {
-                    "name": m.user.name,
-                    "done_tasks": m.done_tasks,
-                    "total_tasks": m.total_tasks,
-                    "workload_score": m.workload_score,
-                    "on_time_rate": m.on_time_rate,
-                    "estimated_hours": m.total_estimated_hours,
-                    "actual_hours": m.total_actual_hours,
-                }
-                for m in dash.members
-            ]
-        }
+        from datetime import date, timedelta
+        from tracker.models.checkin import Checkin
+        today = date.today()
+        week_start = today - timedelta(days=7)
+        month_start = today - timedelta(days=30)
+        members_out = []
+        for m in dash.members:
+            daily = self.db.query(Checkin).filter(Checkin.group_id == group_id, Checkin.user_id == m.user.id, Checkin.period_date == today).count()
+            weekly = self.db.query(Checkin).filter(Checkin.group_id == group_id, Checkin.user_id == m.user.id, Checkin.period_date >= week_start).count()
+            monthly = self.db.query(Checkin).filter(Checkin.group_id == group_id, Checkin.user_id == m.user.id, Checkin.period_date >= month_start).count()
+            members_out.append({
+                "name": m.user.name,
+                "done_tasks": m.done_tasks,
+                "total_tasks": m.total_tasks,
+                "workload_score": m.workload_score,
+                "on_time_rate": m.on_time_rate,
+                "estimated_hours": m.total_estimated_hours,
+                "actual_hours": m.total_actual_hours,
+                "checkins_daily": daily,
+                "checkins_weekly": weekly,
+                "checkins_monthly": monthly,
+            })
+        return {"members": members_out}
