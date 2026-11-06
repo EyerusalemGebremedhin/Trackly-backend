@@ -52,52 +52,23 @@ async def upload_avatar(file: UploadFile = File(...), db: Session = Depends(get_
     data = await file.read()
     if len(data) > 2 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large (max 2MB)")
-    if Image is None:
-        try:
-            import sys
-            sys.path.insert(0, '/usr/lib/python3/dist-packages')
-            from PIL import Image as Image2
-            img = Image2.open(io.BytesIO(data))
-            img = img.convert("RGB")
-            img = img.resize((256, 256))
-            out = io.BytesIO()
-            img.save(out, format="JPEG", quality=85)
-            out.seek(0)
-            filename = f"avatars/{uuid.uuid4().hex}.jpg"
-            os.makedirs("/tmp/trackly_uploads", exist_ok=True)
-            os.makedirs("/home/Student/Downloads/trackly/backend/static/avatars", exist_ok=True)
-            with open(f"/home/Student/Downloads/trackly/backend/static/avatars/{filename.split('/')[-1]}", "wb") as f:
-                f.write(out.getvalue())
-            url = f"/static/avatars/{filename.split('/')[-1]}"
-            current_user.avatar_url = url
-            db.commit()
-            db.refresh(current_user)
-            return {"avatar_url": url}
-        except Exception as e:
-            print(e)
-            raise HTTPException(status_code=500, detail="Image processing unavailable")
     try:
+        import base64, io
+        from PIL import Image
         img = Image.open(io.BytesIO(data))
         img = img.convert("RGB")
         img = img.resize((256, 256))
         out = io.BytesIO()
         img.save(out, format="JPEG", quality=85)
-        out.seek(0)
-    except Exception:
+        b64 = base64.b64encode(out.getvalue()).decode("ascii")
+        url = f"data:image/jpeg;base64,{b64}"
+        current_user.avatar_url = url
+        db.commit()
+        db.refresh(current_user)
+        return {"avatar_url": url}
+    except Exception as e:
+        print(e)
         raise HTTPException(status_code=400, detail="Invalid image")
-    filename = f"avatars/{uuid.uuid4().hex}.jpg"
-    os.makedirs("/tmp/trackly_uploads", exist_ok=True)
-    os.makedirs("/home/Student/Downloads/trackly/backend/static/avatars", exist_ok=True)
-    path = f"/tmp/trackly_uploads/{filename.split('/')[-1]}"
-    with open(path, "wb") as f:
-        f.write(out.read())
-    with open(f"/home/Student/Downloads/trackly/backend/static/avatars/{filename.split('/')[-1]}", "wb") as f:
-        f.write(out.getvalue())
-    url = f"/static/avatars/{filename.split('/')[-1]}"
-    current_user.avatar_url = url
-    db.commit()
-    db.refresh(current_user)
-    return {"avatar_url": url}
 
 
 @router.put("/me/skills")
