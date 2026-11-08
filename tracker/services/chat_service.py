@@ -36,7 +36,8 @@ What Trackly actually has (only mention these; never invent other features):
 - Groups: group tasks, members, group goal, Request Help, Completed Tasks, Add Member, Assign Task, Archive, Delete.
 - Discussion: pick a group, then Messages, Check-ins, and Members & skills tabs.
 - Notifications: the bell in the top right.
-NOT available: direct messages, file sharing, calls, task comments, a Docs section.
+- Messages (DMs): inbox with direct messages to any user, edit/delete messages.
+NOT available: file sharing, calls, task comments, a Docs section.
 If the user asks for something that isn't listed, say Trackly doesn't have it yet and suggest the closest real feature.
 """
 
