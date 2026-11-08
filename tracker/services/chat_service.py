@@ -32,7 +32,8 @@ MOTIVATION_QUOTES = [
 APP_FEATURES = """
 What Trackly actually has (only mention these; never invent other features):
 - Dashboard, My Tasks (board: To be done, In progress, In review, Done; plus the daily check-in form),
-  Groups, Discussion, Performance, Metrics, Talk to Trackly (this assistant), Profile Settings.
+  Groups, Discussion, Performance, Metrics, Talk to Trackly (this assistant), Profile Settings (including avatar upload).
+- To set a profile picture: open Profile Settings, upload an image, and save.
 - Groups: group tasks, members, group goal, Request Help, Completed Tasks, Add Member, Assign Task, Archive, Delete.
 - Discussion: pick a group, then Messages, Check-ins, and Members & skills tabs.
 - Notifications: the bell in the top right.

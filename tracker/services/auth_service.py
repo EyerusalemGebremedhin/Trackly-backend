@@ -222,7 +222,7 @@ class AuthService:
         if self.repo.get_by_email(data.email):
             raise HTTPException(status_code=400, detail="Email already registered")
 
-        activation_token = generate_secure_token()
+        code = generate_verification_code()
         user = User(
             name=data.name,
             email=data.email,
@@ -230,19 +230,19 @@ class AuthService:
             skills=data.skills,
             is_verified=True,
             is_active=False,
-            activation_token=activation_token,
-            activation_expires_at=datetime.utcnow() + timedelta(hours=72),
+            activation_token=code,
+            activation_expires_at=datetime.utcnow() + timedelta(minutes=15),
         )
         user = self.repo.create(user)
-        self._send_activation_email(user, activation_token)
+        self._send_activation_email(user, code)
         return user
 
     def _send_activation_email(self, user: User, token: str) -> None:
-        link = f"{settings.FRONTEND_BASE_URL.rstrip('/')}/activate?token={token}"
+        link = f"{settings.FRONTEND_BASE_URL.rstrip('/')}/activate?email={user.email}&code={token}"
         body = (
             f"Hi {user.name},\n\n"
             f"You have been registered by a team leader on {settings.APP_NAME}.\n\n"
-            f"Activate your account using this link (expires in 72 hours):\n\n"
+            f"Activate your account using this link (expires in 15 minutes):\n\n"
             f"{link}\n\n"
             "If you did not expect this, you can ignore this email."
         )
@@ -267,11 +267,17 @@ class AuthService:
                       <td style="padding: 40px 40px;">
                         <h2 style="color: #111827; margin: 0 0 16px 0; font-size: 22px; font-weight: 600;">Account Activation</h2>
                         <p style="color: #374151; margin: 0 0 24px 0; font-size: 15px; line-height: 24px;">Hi {user.name},</p>
-                        <p style="color: #374151; margin: 0 0 32px 0; font-size: 15px; line-height: 24px;">A team leader has invited you to Trackly. Click below to activate your account:</p>
-                        <div style="text-align: center; margin: 32px 0;">
+                        <p style="color: #374151; margin: 0 0 24px 0; font-size: 15px; line-height: 24px;">A team leader has invited you to Trackly. Use the activation code below to activate your account:</p>
+                        <p style="color: #374151; margin: 0 0 16px 0; font-size: 15px; line-height: 24px;">Your activation code:</p>
+                        <div style="text-align: center; margin: 24px 0;">
+                          <div style="display: inline-block; background-color: #ffffff; border: 1.5px solid #3C050F; border-radius: 6px; padding: 14px 36px;">
+                            <span style="font-size: 28px; font-weight: 700; letter-spacing: 10px; color: #3C050F; font-family: 'Courier New', monospace;">{token}</span>
+                          </div>
+                        </div>
+                        <div style="text-align: center; margin: 28px 0;">
                           <a href="{link}" style="display: inline-block; background-color: #3C050F; color: #ffffff; text-decoration: none; padding: 12px 38px; border-radius: 6px; font-size: 15px; font-weight: 600;">Activate Account</a>
                         </div>
-                        <p style="color: #6b7280; margin: 24px 0 0 0; font-size: 13px; line-height: 20px;">This link expires in 72 hours.</p>
+                        <p style="color: #6b7280; margin: 24px 0 0 0; font-size: 13px; line-height: 20px;">This code expires in 15 minutes.</p>
                       </td>
                     </tr>
                     <tr>
@@ -291,15 +297,39 @@ class AuthService:
         except Exception as exc:
             print(f"Could not send activation email: {exc}", flush=True)
 
-    def activate_account(self, token: str) -> dict:
-        user = self.db.query(User).filter(User.activation_token == token).first()
-        if not user:
-            raise HTTPException(status_code=400, detail="Invalid or expired activation token")
+    def activate_account(self, token: str = None, email: str = None, code: str = None, password: str = None) -> dict:
+        if email and code:
+            user = self.repo.get_by_email(email)
+            if not user or user.activation_token != code:
+                raise HTTPException(status_code=400, detail="Invalid or expired activation code")
+        else:
+            user = self.db.query(User).filter(User.activation_token == token).first()
+            if not user:
+                raise HTTPException(status_code=400, detail="Invalid or expired activation token")
         if user.activation_expires_at and user.activation_expires_at < datetime.utcnow():
-            raise HTTPException(status_code=400, detail="Activation token expired")
+            raise HTTPException(status_code=400, detail="Activation code expired")
+        if password:
+            user.hashed_password = hash_password(password)
         user.is_active = True
         user.activation_token = None
         user.activation_expires_at = None
         self.db.commit()
         self.db.refresh(user)
         return {"message": "Account activated successfully"}
+
+    def get_activation_email(self, token: str) -> str:
+        user = self.db.query(User).filter(User.activation_token == token).first()
+        if not user:
+            raise HTTPException(status_code=400, detail="Invalid or expired activation token")
+        return user.email
+
+    def resend_activation(self, email: str) -> dict:
+        user = self.repo.get_by_email(email)
+        if not user:
+            raise HTTPException(status_code=400, detail="Invalid request")
+        code = generate_verification_code()
+        user.activation_token = code
+        user.activation_expires_at = datetime.utcnow() + timedelta(minutes=15)
+        self.db.commit()
+        self._send_activation_email(user, code)
+        return {"message": "New activation code sent"}

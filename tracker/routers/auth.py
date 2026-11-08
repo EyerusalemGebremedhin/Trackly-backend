@@ -7,7 +7,7 @@ from dependency import get_current_user
 from tracker.models.user import User
 from tracker.schemas.user import (
     UserCreate, UserOut, Token, ForgotPassword, ResetPassword,
-    VerifyEmail, ResendVerification, ActivateAccount, TeamRegisterUser
+    VerifyEmail, ResendVerification, ResendActivation, ActivateAccount, TeamRegisterUser
 )
 from tracker.services.user_service import UserService
 from tracker.services.auth_service import AuthService
@@ -55,7 +55,18 @@ def resend_verification(data: ResendVerification, db: Session = Depends(get_db))
 
 @router.post("/activate")
 def activate(data: ActivateAccount, db: Session = Depends(get_db)):
-    return AuthService(db).activate_account(data.token)
+    return AuthService(db).activate_account(data.token, data.email, data.code, data.password)
+
+
+@router.post("/resend-activation")
+def resend_activation(data: ResendActivation, db: Session = Depends(get_db)):
+    return AuthService(db).resend_activation(data.email)
+
+
+@router.get("/activation-info")
+def activation_info(token: str, db: Session = Depends(get_db)):
+    email = AuthService(db).get_activation_email(token)
+    return {"email": email}
 
 
 @router.post("/team/register", response_model=UserOut)

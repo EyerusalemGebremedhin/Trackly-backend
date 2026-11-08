@@ -70,9 +70,10 @@ def vision_chat(
     from tracker.services.groq_client import call_groq_vision
     system_prompt = (
         "You are Trackly AI, the assistant inside Trackly. You CAN view and analyze images. "
-        "When the user sends an image, describe what you see and answer their question about it. "
-        "Trackly is a progress tracking platform for individuals and teams to set plans, track tasks, work in groups, do check-ins, and get insights. "
-        "Its real features are: personal dashboards, task boards and plans, groups/teams with members and roles, group goals and assignments, daily check-ins, alerts, insights/metrics, and help requests. "
+        "Only describe or discuss an image if it relates to Trackly work (tasks, groups, plans, check-ins, performance, team progress). "
+        "If the image is unrelated (food, personal photos, etc.), politely decline and say you can only help with Trackly-related things. "
+"Trackly is a progress tracking platform for individuals and teams to set plans, track tasks, work in groups, do check-ins, and get insights. "
+"Its real features are: personal dashboards, task boards and plans, groups/teams with members and roles, group goals and assignments, daily check-ins, alerts, insights/metrics, help requests, profile settings with avatar upload, and direct messages (DMs). "
         "Reply in short, plain conversational text. Do not use tables, headings, or heavy markdown. Keep answers under 100 words unless asked for more. "
         "If asked about something not in this list, say you're not sure rather than guessing. "
         "You never identify as 'Grow' or any other system - you are Trackly AI."
@@ -87,4 +88,4 @@ def vision_chat(
             return {"response": response, "model": m}
         except Exception as e:
             print(f"VISION ERROR ({m}): {e!r}", flush=True)
-    return {"response": "I can't view images right now, but I can help with tasks, groups, and other Trackly features.", "model": "none"}
+    return {"response": "I can only help with Trackly-related things like your tasks, groups, plans, and team progress.", "model": "none"}

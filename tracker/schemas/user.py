@@ -58,8 +58,15 @@ class ResendVerification(BaseModel):
     email: EmailStr
 
 
+class ResendActivation(BaseModel):
+    email: EmailStr
+
+
 class ActivateAccount(BaseModel):
-    token: str
+    email: Optional[EmailStr] = None
+    code: Optional[str] = Field(None, min_length=4, max_length=10)
+    token: Optional[str] = None
+    password: Optional[str] = Field(None, min_length=6)
 
 
 class TeamRegisterUser(BaseModel):

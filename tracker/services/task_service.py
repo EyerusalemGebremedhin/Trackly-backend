@@ -157,11 +157,12 @@ class TaskService:
             raise HTTPException(status_code=400, detail="Group tasks are archived by stopping the group, not individually")
         return self.repo.update(task, {"is_archived": archived})
     def list_completed(self, current_user: User, group_id=None):
-        """Finished work. A lead sees the whole group's; everyone else sees only their own."""
-        if group_id and self._is_lead_of(current_user.id, group_id):
+        """Finished work. Completed tasks in a group are visible to all members;
+        otherwise returns only the user's own completed tasks."""
+        if group_id:
+            if not self.memberships.get(current_user.id, group_id):
+                raise HTTPException(status_code=403, detail="Not a member of this group")
             tasks = self.repo.list(group_id=group_id, status=TaskStatus.done)
-        elif group_id:
-            tasks = self.repo.list(assignee_id=current_user.id, group_id=group_id, status=TaskStatus.done)
         else:
             tasks = self.repo.list(assignee_id=current_user.id, status=TaskStatus.done)
         return sorted(tasks, key=lambda t: t.completed_at or t.created_at, reverse=True)

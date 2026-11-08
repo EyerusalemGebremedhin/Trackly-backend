@@ -10,7 +10,7 @@ from tracker.repositories.group_repository import GroupRepository
 from tracker.repositories.membership_repository import MembershipRepository
 from tracker.repositories.user_repository import UserRepository
 from tracker.schemas.group import GroupCreate, GroupUpdate, MemberAdd
-from tracker.services.security import hash_password, generate_secure_token
+from tracker.services.security import hash_password, generate_verification_code, generate_secure_token
 from tracker.services.auth_service import AuthService
 from tracker.services.notification_service import NotificationService
 
@@ -95,7 +95,7 @@ class GroupService:
         role = getattr(data, 'role', None) or "member"
         if not member_user:
             name = data.email.split("@")[0]
-            activation_token = generate_secure_token()
+            activation_token = generate_verification_code()
             user = User(
                 name=name,
                 email=data.email,
@@ -104,7 +104,7 @@ class GroupService:
                 is_verified=True,
                 is_active=False,
                 activation_token=activation_token,
-                activation_expires_at=datetime.utcnow() + timedelta(hours=72),
+                activation_expires_at=datetime.utcnow() + timedelta(minutes=15),
             )
             user = self.users.create(user)
             self.db.commit()
@@ -206,7 +206,7 @@ class GroupService:
             self.db.delete(group)
             self.db.commit()
 
-    def invite_member(self, group_id: int, email: str, current_user: User, first_name: str = None, last_name: str = None):
+    def invite_member(self, group_id: int, email: str, current_user: User, first_name: str = None, last_name: str = None, role: str = None, reason: str = None):
         self._require_lead(current_user.id, group_id)
         existing_user = self.users.get_by_email(email)
         if existing_user:
@@ -215,7 +215,7 @@ class GroupService:
             self.memberships.create(Membership(user_id=existing_user.id, group_id=group_id, role='member'))
             return {"message": "Member added successfully"}
         name = " ".join(filter(None, [first_name, last_name])) if (first_name or last_name) else email.split("@")[0]
-        activation_token = generate_secure_token()
+        activation_token = generate_verification_code()
         user = User(
             name=name,
             email=email,
@@ -224,7 +224,7 @@ class GroupService:
             is_verified=True,
             is_active=False,
             activation_token=activation_token,
-            activation_expires_at=datetime.utcnow() + timedelta(hours=72),
+            activation_expires_at=datetime.utcnow() + timedelta(minutes=15),
         )
         user = self.users.create(user)
         self.db.commit()
