@@ -19,6 +19,7 @@ class UserOut(BaseModel):
     avatar_url: Optional[str] = None
     is_verified: bool = False
     is_active: bool = True
+    is_online: bool = False
     mfa_enabled: bool = False
 
     class Config:

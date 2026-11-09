@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi import UploadFile, File
 from sqlalchemy.orm import Session
+from datetime import datetime, timezone
 import os, uuid, io, sys
 try:
     sys.path.insert(0, '/usr/lib/python3/dist-packages')
@@ -16,6 +17,29 @@ from tracker.services.user_service import UserService
 
 router = APIRouter(prefix="/users", tags=["users"])
 
+ONLINE_WINDOW_SEC = 120
+
+def _user_out(u: User) -> dict:
+    ts = getattr(u, "last_seen_at", None)
+    online = False
+    if ts:
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        online = (datetime.now(timezone.utc) - ts).total_seconds() <= ONLINE_WINDOW_SEC
+    return {
+        "id": u.id,
+        "name": u.name,
+        "email": u.email,
+        "skills": u.skills,
+        "job_title": u.job_title,
+        "bio": getattr(u, "bio", None),
+        "avatar_url": u.avatar_url,
+        "is_verified": bool(getattr(u, "is_verified", False)),
+        "is_active": bool(getattr(u, "is_active", True)),
+        "is_online": online,
+        "mfa_enabled": bool(getattr(u, "mfa_enabled", False)),
+    }
+
 
 @router.delete("/me/avatar")
 def remove_avatar(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -25,13 +49,13 @@ def remove_avatar(db: Session = Depends(get_db), current_user: User = Depends(ge
     return {"avatar_url": None}
 @router.get("/me", response_model=UserOut)
 def get_me(current_user: User = Depends(get_current_user)):
-    return current_user
+    return _user_out(current_user)
 
 
 @router.get("/{user_id}", response_model=UserOut)
 def get_user(user_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     service = UserService(db)
-    return service.get_user(user_id)
+    return _user_out(service.get_user(user_id))
 
 
 @router.patch("/me", response_model=UserOut)
@@ -40,7 +64,7 @@ def update_profile(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return UserService(db).update_profile(current_user, updates)
+    return _user_out(UserService(db).update_profile(current_user, updates))
 
 from fastapi import UploadFile, File
 import os, uuid, io
