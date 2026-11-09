@@ -17,12 +17,22 @@ router = APIRouter(prefix="/dm", tags=["dm"])
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
+ONLINE_WINDOW_SEC = 120
+
 def _iso(dt):
     if not dt:
         return None
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.isoformat()
+
+def _is_online(u) -> bool:
+    ts = getattr(u, "last_seen_at", None)
+    if not ts:
+        return False
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - ts).total_seconds() <= ONLINE_WINDOW_SEC
 
 def _save_upload(file: UploadFile, subdir: str) -> str:
     ext = Path(file.filename).suffix if file.filename else ""
@@ -54,7 +64,7 @@ def dm_contacts(q: str | None = None, db=Depends(get_db), me=Depends(get_current
         )
 
     rows = query.order_by(User.name).all()
-    return [{"id": u.id, "name": u.name, "email": u.email, "avatar_url": getattr(u, "avatar_url", None), "is_active": getattr(u, "is_active", True)} for u in rows]
+    return [{"id": u.id, "name": u.name, "email": u.email, "avatar_url": getattr(u, "avatar_url", None), "is_online": _is_online(u)} for u in rows]
 
 
 class OpenDm(BaseModel):
@@ -177,9 +187,9 @@ def inbox(db=Depends(get_db), me=Depends(get_current_user)):
         unread = db.query(DirectMessage).filter(DirectMessage.conversation_id == c.id, DirectMessage.sender_id != me.id, DirectMessage.read_at == None).count()
         out.append({
             "id": c.id,
-            "other": {"id": other.id, "name": other.name, "avatar_url": getattr(other, "avatar_url", None), "is_active": getattr(other, "is_active", True)},
+            "other": {"id": other.id, "name": other.name, "avatar_url": getattr(other, "avatar_url", None), "is_online": _is_online(other)},
             "last_message": last.body if last else None,
-            "last_at": last.created_at.isoformat() if last else None,
+            "last_at": _iso(last.created_at) if last else None,
             "unread": unread,
             "is_self": is_self,
         })
@@ -191,7 +201,7 @@ def get_convo(convo_id: int, db=Depends(get_db), me=Depends(get_current_user)):
     c = get_convo_or_404(db, convo_id, me)
     other_id = c.user_high_id if c.user_low_id == me.id else c.user_low_id
     other = db.get(User, other_id)
-    return {"id": c.id, "other": {"id": other.id, "name": other.name, "avatar_url": getattr(other, "avatar_url", None), "is_active": getattr(other, "is_active", True)}, "is_self": c.user_low_id == c.user_high_id}
+    return {"id": c.id, "other": {"id": other.id, "name": other.name, "avatar_url": getattr(other, "avatar_url", None), "is_online": _is_online(other)}, "is_self": c.user_low_id == c.user_high_id}
 
 @router.post("/{convo_id}/read")
 def mark_read(convo_id: int, db=Depends(get_db), me=Depends(get_current_user)):

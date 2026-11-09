@@ -33,6 +33,11 @@ def _ensure_columns():
         targets.append(GroupMessage.__table__)
     except Exception:
         pass
+    try:
+        from tracker.models.user import User
+        targets.append(User.__table__)
+    except Exception:
+        pass
 
     with engine.connect() as conn:
         insp = inspect(conn)
