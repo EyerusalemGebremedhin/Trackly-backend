@@ -14,19 +14,49 @@ Base.metadata.create_all(bind=engine)
 
 # lightweight migration for added columns (SQLite/Postgres)
 from sqlalchemy import inspect, text
+
+def _pg_type(col):
+    try:
+        return col.type.compile(dialect=engine.dialect)
+    except Exception:
+        return "TEXT"
+
 def _ensure_columns():
-    insp = inspect(engine)
-    with engine.begin() as conn:
-        for table, col, ddl in [
-            ("direct_messages", "hidden_for_user_id", "INTEGER"),
-            ("group_messages", "hidden_for_user_id", "INTEGER"),
-        ]:
-            if table in insp.get_table_names() and col not in [c["name"] for c in insp.get_columns(table)]:
-                conn.execute(text(f'ALTER TABLE {table} ADD COLUMN {col} {ddl}'))
-try:
-    _ensure_columns()
-except Exception:
-    pass
+    targets = []
+    try:
+        from tracker.models.dm import DirectMessage
+        targets.append(DirectMessage.__table__)
+    except Exception:
+        pass
+    try:
+        from tracker.models.group_message import GroupMessage
+        targets.append(GroupMessage.__table__)
+    except Exception:
+        pass
+
+    with engine.connect() as conn:
+        insp = inspect(conn)
+        tables = set(insp.get_table_names())
+        for table in targets:
+            if table.name not in tables:
+                continue
+            existing = {c["name"] for c in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.name in existing or col.primary_key:
+                    continue
+                ddl = _pg_type(col)
+                if not col.nullable and col.server_default is None and col.default is None:
+                    ddl += " NULL"
+                try:
+                    conn.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {ddl}'))
+                    conn.commit()
+                except Exception:
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+
+_ensure_columns()
 
 app = FastAPI(title=f"{settings.APP_NAME} API", version="2.0.0")
 
