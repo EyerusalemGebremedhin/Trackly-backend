@@ -1,9 +1,12 @@
 from datetime import datetime, timezone, timedelta
 from typing import Optional
+import os
+import uuid
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -20,9 +23,31 @@ class MessageIn(BaseModel):
 router = APIRouter()
 
 
+UPLOAD_DIR = Path("uploads")
+UPLOAD_DIR.mkdir(exist_ok=True)
+
+
+def _save_upload(file: UploadFile, subdir: str) -> str:
+    ext = Path(file.filename).suffix if file.filename else ""
+    unique = f"{uuid.uuid4().hex}{ext}"
+    target = UPLOAD_DIR / subdir / unique
+    target.parent.mkdir(parents=True, exist_ok=True)
+    content = file.file.read()
+    target.write_bytes(content)
+    return f"/uploads/{subdir}/{unique}"
+
+
 def _require_member(db: Session, group_id: int, user: User):
     if not db.query(Membership).filter(Membership.group_id == group_id, Membership.user_id == user.id).first():
         raise HTTPException(403, "You are not a member of this group")
+
+
+def _iso(dt):
+    if not dt:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
 
 
 def _out(m: GroupMessage):
@@ -30,10 +55,12 @@ def _out(m: GroupMessage):
         "id": m.id,
         "kind": m.kind,
         "body": m.body,
+        "image_url": m.image_url,
+        "audio_url": m.audio_url,
         "author_id": m.author_id,
         "author_name": m.author_name,
-        "created_at": m.created_at.isoformat() if m.created_at else datetime.now(timezone.utc).isoformat(),
-        "edited_at": m.edited_at.isoformat() if m.edited_at else None,
+        "created_at": _iso(m.created_at) or datetime.now(timezone.utc).isoformat(),
+        "edited_at": _iso(m.edited_at),
         "pinned": m.pinned_at is not None,
     }
 
@@ -49,7 +76,11 @@ def list_messages(
     user: User = Depends(get_current_user),
 ):
     _require_member(db, group_id, user)
-    q = select(GroupMessage).where(GroupMessage.group_id == group_id, GroupMessage.deleted_at.is_(None))
+    q = select(GroupMessage).where(
+        GroupMessage.group_id == group_id,
+        GroupMessage.deleted_at.is_(None),
+        or_(GroupMessage.hidden_for_user_id.is_(None), GroupMessage.hidden_for_user_id != user.id),
+    )
     if kind:
         q = q.where(GroupMessage.kind == kind)
     if search:
@@ -81,13 +112,23 @@ def edit_message(group_id: int, message_id: int, body: MessageIn, db: Session = 
 
 
 @router.delete("/groups/{group_id}/messages/{message_id}", status_code=204)
-def delete_message(group_id: int, message_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def delete_message(group_id: int, message_id: int, scope: str = Query("everyone"), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _require_member(db, group_id, user)
     m = db.get(GroupMessage, message_id)
     if not m or m.group_id != group_id or m.deleted_at is not None:
         raise HTTPException(404, "Message not found")
-    if m.author_id != user.id:
+    mem = db.query(Membership).filter(Membership.group_id == group_id, Membership.user_id == user.id).first()
+    is_admin = bool(mem and getattr(mem, "role", "member") == "admin")
+    if m.author_id != user.id and not is_admin:
         raise HTTPException(403, "Not allowed")
+    if scope == "me":
+        m.hidden_for_user_id = user.id
+        db.commit()
+        return
+    if m.author_id == user.id:
+        replied = db.query(GroupMessage).filter(GroupMessage.group_id == group_id, GroupMessage.author_id != user.id, GroupMessage.id > m.id, GroupMessage.deleted_at.is_(None)).first()
+        if replied:
+            raise HTTPException(409, "Can't delete after someone replied")
     m.deleted_at = datetime.now(timezone.utc)
     db.commit()
 @router.post("/groups/{group_id}/messages/{message_id}/pin", status_code=204)
@@ -109,12 +150,37 @@ def unpin_message(group_id: int, message_id: int, db: Session = Depends(get_db),
     db.commit()
 
 @router.post("/groups/{group_id}/messages", status_code=201)
-def post_message(group_id: int, body: MessageIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+async def post_message(
+    group_id: int,
+    body: str = Form(""),
+    image: Optional[UploadFile] = File(None),
+    audio: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     _require_member(db, group_id, user)
-    text = body.body.strip()
-    if not text:
+    text = body.strip()
+    if not text and not image and not audio:
         raise HTTPException(422, "Message is empty")
-    m = GroupMessage(group_id=group_id, author_id=user.id, author_name=user.name, kind="message", body=text)
+    
+    image_url = None
+    audio_url = None
+    
+    if image and image.content_type and image.content_type.startswith("image/"):
+        image_url = _save_upload(image, "images")
+    
+    if audio and audio.content_type and audio.content_type.startswith("audio/"):
+        audio_url = _save_upload(audio, "audio")
+    
+    m = GroupMessage(
+        group_id=group_id,
+        author_id=user.id,
+        author_name=user.name,
+        kind="message",
+        body=text,
+        image_url=image_url,
+        audio_url=audio_url
+    )
     db.add(m)
     db.commit()
     db.refresh(m)

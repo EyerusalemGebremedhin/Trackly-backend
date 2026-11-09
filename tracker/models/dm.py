@@ -1,5 +1,6 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, Text, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, Text, DateTime, ForeignKey, UniqueConstraint, String
+
 from database import Base
 
 class DirectConversation(Base):
@@ -15,7 +16,10 @@ class DirectMessage(Base):
     conversation_id = Column(Integer, ForeignKey("direct_conversations.id"), index=True, nullable=False)
     sender_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     body = Column(Text, nullable=False)
+    image_url = Column(String(500), nullable=True)
+    audio_url = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     edited_at = Column(DateTime, nullable=True)
     deleted_at = Column(DateTime, nullable=True)
     read_at = Column(DateTime, nullable=True)
+    hidden_for_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)

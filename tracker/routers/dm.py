@@ -1,15 +1,37 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from datetime import datetime, timezone
 from sqlalchemy import or_
-from datetime import datetime
+from typing import Optional
+import uuid
+from pathlib import Path
 
 from database import get_db
 from dependency import get_current_user
 from tracker.models.user import User
 from tracker.models.dm import DirectConversation, DirectMessage
+from tracker.models.membership import Membership
 
 router = APIRouter(prefix="/dm", tags=["dm"])
+
+UPLOAD_DIR = Path("uploads")
+UPLOAD_DIR.mkdir(exist_ok=True)
+
+def _iso(dt):
+    if not dt:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
+
+def _save_upload(file: UploadFile, subdir: str) -> str:
+    ext = Path(file.filename).suffix if file.filename else ""
+    unique = f"{uuid.uuid4().hex}{ext}"
+    target = UPLOAD_DIR / subdir / unique
+    target.parent.mkdir(parents=True, exist_ok=True)
+    content = file.file.read()
+    target.write_bytes(content)
+    return f"/uploads/{subdir}/{unique}"
 
 @router.get("/contacts")
 def dm_contacts(q: str | None = None, db=Depends(get_db), me=Depends(get_current_user)):
@@ -64,19 +86,69 @@ def open_dm(payload: OpenDm, db=Depends(get_db), me=Depends(get_current_user)):
 @router.get("/{convo_id}/messages")
 def list_messages(convo_id: int, after_id: int = 0, db=Depends(get_db), me=Depends(get_current_user)):
     get_convo_or_404(db, convo_id, me)
-    return (db.query(DirectMessage)
-              .filter(DirectMessage.conversation_id == convo_id, DirectMessage.id > after_id)
+    rows = (db.query(DirectMessage)
+              .filter(
+                  DirectMessage.conversation_id == convo_id,
+                  DirectMessage.id > after_id,
+                  DirectMessage.deleted_at.is_(None),
+                  or_(DirectMessage.hidden_for_user_id.is_(None), DirectMessage.hidden_for_user_id != me.id),
+              )
               .order_by(DirectMessage.id).limit(200).all())
+    return [{
+        "id": m.id,
+        "sender_id": m.sender_id,
+        "body": m.body,
+        "image_url": m.image_url,
+        "audio_url": m.audio_url,
+        "created_at": _iso(m.created_at) or datetime.now(timezone.utc).isoformat(),
+        "edited_at": _iso(m.edited_at),
+        "read_at": _iso(m.read_at),
+    } for m in rows]
 
 @router.post("/{convo_id}/messages")
-def send_message(convo_id: int, payload: SendDm, db=Depends(get_db), me=Depends(get_current_user)):
+async def send_message(
+    convo_id: int,
+    body: str = Form(""),
+    image: Optional[UploadFile] = File(None),
+    audio: Optional[UploadFile] = File(None),
+    db=Depends(get_db),
+    me=Depends(get_current_user)
+):
     get_convo_or_404(db, convo_id, me)
-    body = payload.body.strip()
-    if not body or len(body) > 4000:
+    text = body.strip()
+    if not text and not image and not audio:
         raise HTTPException(400, "Invalid message")
-    msg = DirectMessage(conversation_id=convo_id, sender_id=me.id, body=body)
-    db.add(msg); db.commit(); db.refresh(msg)
-    return msg
+    
+    image_url = None
+    audio_url = None
+    
+    if image and image.content_type and image.content_type.startswith("image/"):
+        image_url = _save_upload(image, "images")
+    
+    if audio and audio.content_type and audio.content_type.startswith("audio/"):
+        audio_url = _save_upload(audio, "audio")
+    
+    msg = DirectMessage(
+        conversation_id=convo_id,
+        sender_id=me.id,
+        body=text,
+        image_url=image_url,
+        audio_url=audio_url
+    )
+    db.add(msg)
+    db.commit()
+    db.refresh(msg)
+    return {
+        "id": msg.id,
+        "sender_id": msg.sender_id,
+        "body": msg.body,
+        "image_url": msg.image_url,
+        "audio_url": msg.audio_url,
+        "created_at": _iso(msg.created_at) or datetime.now(timezone.utc).isoformat(),
+        "edited_at": _iso(msg.edited_at),
+        "deleted_at": _iso(msg.deleted_at),
+        "read_at": _iso(msg.read_at),
+    }
 
 @router.get("/unread-count")
 def unread_count(db=Depends(get_db), me=Depends(get_current_user)):
@@ -107,11 +179,11 @@ def inbox(db=Depends(get_db), me=Depends(get_current_user)):
             "id": c.id,
             "other": {"id": other.id, "name": other.name, "avatar_url": getattr(other, "avatar_url", None), "is_active": getattr(other, "is_active", True)},
             "last_message": last.body if last else None,
-            "last_at": last.created_at if last else None,
+            "last_at": last.created_at.isoformat() if last else None,
             "unread": unread,
             "is_self": is_self,
         })
-    out.sort(key=lambda x: (not x["is_self"], -(x["last_at"].timestamp() if x["last_at"] else 0)))
+    out.sort(key=lambda x: (not x["is_self"], -(datetime.fromisoformat(x["last_at"]).timestamp() if x["last_at"] else 0)))
     return out
 
 @router.get("/{convo_id}")
@@ -144,16 +216,20 @@ def delete_chat(convo_id: int, everyone: bool = False, db=Depends(get_db), me=De
     return {"ok": True}
 
 @router.delete("/{convo_id}/messages/{message_id}")
-def delete_message(convo_id: int, message_id: int, db=Depends(get_db), me=Depends(get_current_user)):
+def delete_message(convo_id: int, message_id: int, scope: str = "everyone", db=Depends(get_db), me=Depends(get_current_user)):
     get_convo_or_404(db, convo_id, me)
     m = db.get(DirectMessage, message_id)
     if not m or m.conversation_id != convo_id or m.sender_id != me.id:
         raise HTTPException(404, "Message not found")
-    if m.deleted_at:
+    if m.deleted_at or m.hidden_for_user_id == me.id:
         raise HTTPException(400, "Already deleted")
+    if scope == "me":
+        m.hidden_for_user_id = me.id
+        db.commit()
+        return {"ok": True}
     replied = db.query(DirectMessage).filter(DirectMessage.conversation_id == convo_id, DirectMessage.sender_id != me.id, DirectMessage.id > m.id).first()
     if replied:
-        raise HTTPException(409, "Cannot delete: the other person has already replied")
+        raise HTTPException(409, "Can't delete after someone replied")
     m.deleted_at = datetime.now(timezone.utc)
     db.commit()
     return {"ok": True}
@@ -171,9 +247,6 @@ def edit_message(convo_id: int, message_id: int, payload: EditDm, db=Depends(get
         raise HTTPException(403, "You can only edit your own messages")
     if msg.deleted_at:
         raise HTTPException(400, "Message was deleted")
-    replied = db.query(DirectMessage).filter(DirectMessage.conversation_id == convo_id, DirectMessage.sender_id != me.id, DirectMessage.id > msg.id).first()
-    if replied:
-        raise HTTPException(409, "The other person has already replied")
     age = (datetime.now(timezone.utc) - (msg.created_at.replace(tzinfo=timezone.utc) if msg.created_at.tzinfo is None else msg.created_at)).total_seconds()
     if age > 24 * 3600:
         raise HTTPException(403, "Edit window (24h) expired")
@@ -181,7 +254,6 @@ def edit_message(convo_id: int, message_id: int, payload: EditDm, db=Depends(get
     msg.edited_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(msg)
-    return {"id": msg.id, "sender_id": msg.sender_id, "body": msg.body, "created_at": msg.created_at, "edited_at": msg.edited_at, "deleted_at": msg.deleted_at}
+    return {"id": msg.id, "sender_id": msg.sender_id, "body": msg.body, "created_at": _iso(msg.created_at), "edited_at": _iso(msg.edited_at), "deleted_at": _iso(msg.deleted_at)}
 
-from tracker.models.membership import Membership
 from sqlalchemy import or_ as _or
