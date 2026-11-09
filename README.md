@@ -2,8 +2,6 @@
 
 FastAPI backend for **Trackly** (task/group tracking, check-ins, group goals, discussions & DMs, help requests, notifications, and AI insights/chat).
 
-> Repo: `Trackly-backend` — this README is shown on the repository home page.
-
 ## Stack
 - Python, **FastAPI** + Uvicorn
 - **SQLAlchemy** (SQLite locally by default; Postgres supported via `DATABASE_URL`)
@@ -27,12 +25,12 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 ## Environment (`.env`)
 See `.env.example`. Key vars:
-- `DATABASE_URL` — e.g. `sqlite:///./progress_tracker.db` or a Postgres URL
-- `SECRET_KEY` — long random string (JWT signing)
-- `ACCESS_TOKEN_EXPIRE_MINUTES` — token lifetime
-- `FRONTEND_URL` — allowed frontend origin / links
-- `GROQ_API_KEY` — required for AI insight/chat features
-- `APP_NAME` — display name
+- `DATABASE_URL`: e.g. `sqlite:///./progress_tracker.db` or a Postgres URL
+- `SECRET_KEY`: long random string (JWT signing)
+- `ACCESS_TOKEN_EXPIRE_MINUTES`: token lifetime
+- `FRONTEND_URL`: allowed frontend origin / links
+- `GROQ_API_KEY`: required for AI insight/chat features
+- `APP_NAME`: display name
 
 ## Notes
 - On startup the app runs `create_all` and lightweight column migrations for evolving tables (messages/users presence). For production, manage migrations deliberately.
