@@ -102,7 +102,7 @@ def edit_message(group_id: int, message_id: int, body: MessageIn, db: Session = 
     created = m.created_at
     if created.tzinfo is None:
         created = created.replace(tzinfo=timezone.utc)
-    if datetime.now(timezone.utc) - created > timedelta(hours=12):
+    if datetime.now(timezone.utc) - created > timedelta(hours=24):
         raise HTTPException(409, "Messages can only be edited within 24 hours")
     m.body = body.body.strip()
     m.edited_at = datetime.now(timezone.utc)
