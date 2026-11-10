@@ -38,7 +38,7 @@ class ForgotPassword(BaseModel):
 
 class ResetPassword(BaseModel):
     token: str
-    new_password: str = Field(..., min_length=6)
+    new_password: str = Field(..., min_length=8)
 
 
 class ProfileUpdate(BaseModel):
@@ -47,7 +47,7 @@ class ProfileUpdate(BaseModel):
     skills: Optional[str] = None
     job_title: Optional[str] = None
     bio: Optional[str] = None
-    password: Optional[str] = Field(None, min_length=6)
+    password: Optional[str] = Field(None, min_length=8)
 
 
 class VerifyEmail(BaseModel):
@@ -67,7 +67,7 @@ class ActivateAccount(BaseModel):
     email: Optional[EmailStr] = None
     code: Optional[str] = Field(None, min_length=4, max_length=10)
     token: Optional[str] = None
-    password: Optional[str] = Field(None, min_length=6)
+    password: Optional[str] = Field(None, min_length=8)
 
 
 class TeamRegisterUser(BaseModel):
